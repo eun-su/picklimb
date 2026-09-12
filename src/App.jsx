@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { getDashboard, logout, removeRecord, saveRecord, verifyMemberAccess } from './lib/attendanceStore'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { canOperate, checkIn, getDashboard, isAdmin, logout, removeCheckIn, saveNotice, verifyMemberAccess } from './lib/attendanceStore'
 import './App.css'
 
 const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const dateFromKey = (key) => new Date(`${key}T12:00:00`)
+const addDays = (date, amount) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount)
+const addMonths = (date, amount) => new Date(date.getFullYear(), date.getMonth() + amount, 1)
+const monthStart = (date) => new Date(date.getFullYear(), date.getMonth(), 1)
 const monthTitle = (date) => new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long' }).format(date)
 const formatDate = (key) => new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' }).format(dateFromKey(key))
-const monthStart = (date) => new Date(date.getFullYear(), date.getMonth(), 1)
-const addMonths = (date, amount) => new Date(date.getFullYear(), date.getMonth() + amount, 1)
+const roleLabel = (role) => ({ admin: '관리자', staff: '운영진', member: '정회원' }[role] || '정회원')
+const currentQuarterStart = () => { const now = new Date(); return dayKey(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)) }
 
 function Login({ onEnter }) {
   const [name, setName] = useState('')
@@ -18,61 +21,87 @@ function Login({ onEnter }) {
     event.preventDefault(); setError(''); setLoading(true)
     try { onEnter(await verifyMemberAccess(name, code)) } catch (reason) { setError(reason.message) } finally { setLoading(false) }
   }
-  return <main className="login-page"><section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>같이 움직인<br />순간을 기록해요.</h1><p>내 운동 기록을 남기고, 함께한 시간을 확인하세요.</p><div className="intro-line" /><p className="intro-note">승인된 피클즈 멤버만 입장할 수 있습니다.</p></section><section className="login-panel"><div className="login-card"><span className="eyebrow">MEMBER ACCESS</span><h2>출석 기록 입장</h2><p className="muted">등록된 성함과 개인 참여코드를 입력해 주세요.</p><form onSubmit={submit}><label htmlFor="name">성함</label><input id="name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김피클" /><label htmlFor="code">개인 참여코드</label><input id="code" type="password" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="참여코드 입력" />{error && <p className="form-error">{error}</p>}<button className="button primary" disabled={loading}>{loading ? '확인 중...' : '입장하기'} <span>→</span></button></form><p className="help-text">반복된 로그인 실패 시 잠시 입장이 제한됩니다.</p></div></section></main>
+  return <main className="login-page">
+    <section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>피리부는 클라이머<br />출석체크</h1><p>함께 움직인 하루를 간단하고 투명하게 남겨요.</p><div className="intro-line" /><p className="intro-note">승인된 피클즈 멤버만 입장할 수 있습니다.</p></section>
+    <section className="login-panel"><div className="login-card"><span className="eyebrow">MEMBER ACCESS</span><h2>출석 기록 입장</h2><p className="muted">등록된 성함과 개인 참여코드를 입력해 주세요.</p><form onSubmit={submit}><label htmlFor="name">성함</label><input id="name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김피클" /><label htmlFor="code">개인 참여코드</label><input id="code" type="password" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="참여코드 입력" />{error && <p className="form-error">{error}</p>}<button className="button primary" disabled={loading}>{loading ? '확인 중...' : '입장하기'} <span>→</span></button></form><p className="help-text">반복된 로그인 실패 시 잠시 입장이 제한됩니다.</p></div></section>
+  </main>
 }
 
-function RecordModal({ date, record, member, onClose, onSaved }) {
-  const [note, setNote] = useState(record?.note || '')
+function DayModal({ date, records, member, onClose, onChanged }) {
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const save = async (event) => { event.preventDefault(); setLoading(true); try { await saveRecord(member, { date, note }); setSuccess(true); await onSaved() } finally { setLoading(false) } }
-  const remove = async () => { if (!window.confirm('이 날짜의 운동 기록을 삭제할까요?')) return; setLoading(true); try { await removeRecord(member, date); await onSaved(); onClose() } finally { setLoading(false) } }
-  if (success) return <div className="modal-backdrop"><section className="modal success-modal"><div className="success-check">✓</div><span className="eyebrow">RECORD SAVED</span><h2>참여해 주셔서<br />감사합니다!</h2><p>출석 체크에 반영되었어요.<br />운영진이 3개월 활동 기록을 확인합니다.</p><button className="button primary" onClick={onClose}>확인했어요</button></section></div>
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}><button className="close" onClick={onClose}>×</button><span className="eyebrow">{record ? 'EDIT RECORD' : 'NEW RECORD'}</span><h2>{formatDate(date)}<br />운동 기록</h2><form onSubmit={save}><label htmlFor="note">오늘 어떤 운동을 했나요?</label><textarea id="note" maxLength="240" autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="예: 클라이밍 2시간, 러닝 5km" /><p className="field-note">기록은 나중에 수정하거나 삭제할 수 있어요.</p><button className="button primary" disabled={loading}>{loading ? '저장 중...' : '저장하기'}</button></form>{record && <button className="delete-button" disabled={loading} onClick={remove}>이 기록 삭제하기</button>}</section></div>
+  const today = dayKey(new Date())
+  const mine = records.find((record) => record.memberId === member.id)
+  const add = async () => { setLoading(true); try { await checkIn(member, date); await onChanged(); onClose() } finally { setLoading(false) } }
+  const remove = async () => {
+    if (!window.confirm('이 날짜의 내 출석을 취소할까요?')) return
+    setLoading(true); try { await removeCheckIn(member, date); await onChanged(); onClose() } finally { setLoading(false) }
+  }
+  const pastOrToday = date <= today
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal day-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={onClose} aria-label="닫기">×</button><span className="eyebrow">DAILY CHECK-IN</span><h2>{formatDate(date)}</h2><p className="day-description">이 날짜에 출석을 남긴 멤버입니다.</p><div className="checked-members">{records.length ? records.map((record) => <span className={`checked-person ${record.memberId === member.id ? 'mine' : ''}`} key={record.id}><b>{record.memberName.slice(0, 1)}</b>{record.memberName}{record.memberId === member.id && <em>나</em>}</span>) : <p>아직 출석을 남긴 멤버가 없어요.</p>}</div>{mine ? <button className="button outline" disabled={loading} onClick={remove}>{loading ? '처리 중...' : '내 출석 취소하기'}</button> : pastOrToday ? <button className="button primary" disabled={loading} onClick={add}>{loading ? '반영 중...' : '이 날짜에 출석 체크'} <span>→</span></button> : <p className="field-note">미래 날짜에는 출석 체크를 할 수 없어요.</p>}<p className="field-note">다른 멤버의 출석은 확인만 가능하며 수정하거나 삭제할 수 없어요.</p></section></div>
 }
 
-function Calendar({ month, records, onMove, onOpen }) {
+function NoticeModal({ notice, onClose, onSaved }) {
+  const [title, setTitle] = useState(notice.title)
+  const [content, setContent] = useState(notice.content)
+  const [loading, setLoading] = useState(false)
+  const save = async (event) => { event.preventDefault(); setLoading(true); try { await saveNotice({ title: title.trim() || '피리부는 클라이머 이용가이드', content: content.trim() }); await onSaved(); onClose() } finally { setLoading(false) } }
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={onClose} aria-label="닫기">×</button><span className="eyebrow">ADMIN EDITOR</span><h2>공지사항 수정</h2><form onSubmit={save}><label htmlFor="notice-title">제목</label><input id="notice-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength="80" /><label htmlFor="notice-content">내용</label><textarea id="notice-content" value={content} onChange={(event) => setContent(event.target.value)} maxLength="1200" /><button className="button primary" disabled={loading}>{loading ? '저장 중...' : '저장하기'} <span>→</span></button></form></section></div>
+}
+
+function Calendar({ month, records, member, onMove, onOpen, onTodayCheck }) {
   const today = dayKey(new Date())
   const first = monthStart(month)
-  const startOffset = first.getDay()
+  const offset = first.getDay()
   const total = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
-  const recordByDate = new Map(records.map((item) => [item.date, item]))
+  const grouped = new Map()
+  records.forEach((record) => grouped.set(record.date, [...(grouped.get(record.date) || []), record]))
+  const atCurrentMonth = first.getTime() === monthStart(new Date()).getTime()
+  const todayDone = (grouped.get(today) || []).some((record) => record.memberId === member.id)
   const cells = Array.from({ length: 42 }, (_, index) => {
-    const day = index - startOffset + 1
+    const day = index - offset + 1
     if (day < 1 || day > total) return null
-    const date = new Date(month.getFullYear(), month.getMonth(), day)
-    return { key: dayKey(date), day, record: recordByDate.get(dayKey(date)) }
+    const key = dayKey(new Date(month.getFullYear(), month.getMonth(), day))
+    return { day, key, entries: grouped.get(key) || [] }
   })
-  const atCurrentMonth = monthStart(month).getTime() === monthStart(new Date()).getTime()
-  return <section className="calendar-card"><div className="calendar-header"><div><span className="eyebrow">MY ACTIVITY CALENDAR</span><h2>{monthTitle(month)}</h2></div><div className="calendar-controls"><button onClick={() => onMove(-1)} aria-label="이전 달">←</button><button disabled={atCurrentMonth} onClick={() => onMove(1)} aria-label="다음 달">→</button></div></div><div className="weekdays">{['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{cells.map((cell, index) => cell ? <button key={cell.key} disabled={cell.key > today} onClick={() => onOpen(cell.key, cell.record)} className={`calendar-day ${cell.record ? 'recorded' : ''} ${cell.key === today ? 'today' : ''}`}><b>{cell.day}</b>{cell.record ? <small>{cell.record.note}</small> : <i>+</i>}</button> : <span className="calendar-blank" key={`blank-${index}`} />)}</div><p className="calendar-help">날짜를 눌러 운동 기록을 남겨 주세요. 기록한 날짜는 다시 눌러 수정하거나 삭제할 수 있습니다.</p></section>
+  return <section className="calendar-card"><div className="calendar-header"><div><span className="eyebrow">PICKLIMB CHECK-IN</span><h2>{monthTitle(month)}</h2></div><div className="calendar-actions"><button className="today-check" onClick={onTodayCheck}>{todayDone ? '오늘 출석 확인' : '출석 체크'} <span>→</span></button><div className="calendar-controls"><button onClick={() => onMove(-1)} aria-label="이전 달">←</button><button disabled={atCurrentMonth} onClick={() => onMove(1)} aria-label="다음 달">→</button></div></div></div><div className="weekdays">{['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{cells.map((cell, index) => cell ? <button key={cell.key} onClick={() => onOpen(cell.key)} className={`calendar-day ${cell.entries.length ? 'recorded' : ''} ${cell.key === today ? 'today' : ''}`}><b>{cell.day}</b>{cell.entries.length > 0 && <small>{cell.entries.slice(0, 2).map((record) => record.memberName).join(' · ')}{cell.entries.length > 2 && ` 외 ${cell.entries.length - 2}`}</small>}<i>{cell.entries.length || '+'}</i></button> : <span className="calendar-blank" key={`blank-${index}`} />)}</div><p className="calendar-help">날짜를 누르면 그날 출석한 멤버를 볼 수 있어요. 내 출석만 취소하거나 다시 체크할 수 있습니다.</p></section>
 }
 
-function AdminPanel({ data }) {
+function MobileTimeline({ records, member, onOpen }) {
+  const [before, setBefore] = useState(3)
+  const [after, setAfter] = useState(3)
+  const today = new Date()
+  const days = Array.from({ length: before + after + 1 }, (_, index) => addDays(today, index - before))
+  const grouped = new Map()
+  records.forEach((record) => grouped.set(record.date, [...(grouped.get(record.date) || []), record]))
+  return <section className="mobile-timeline"><div className="mobile-list-head"><span className="eyebrow">DAILY CHECK-IN</span><h2>날짜별 출석</h2></div><button className="load-more" onClick={() => setBefore((value) => value + 7)}>이전 7일 더 보기</button>{days.map((date) => { const key = dayKey(date); const entries = grouped.get(key) || []; const mine = entries.some((record) => record.memberId === member.id); return <button className={`timeline-row ${key === dayKey(today) ? 'today' : ''}`} onClick={() => onOpen(key)} key={key}><span className="timeline-date">{new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }).format(date)}</span><span className="timeline-members">{entries.length ? `${entries.map((item) => item.memberName).join(' · ')}${mine ? ' · 나' : ''}` : '출석 기록 없음'}</span><b>{entries.length}명</b></button> })}<button className="load-more" onClick={() => setAfter((value) => value + 7)}>다음 7일 더 보기</button></section>
+}
+
+function OperatorPanel({ data }) {
   const [search, setSearch] = useState('')
-  const threeMonthsAgo = dayKey(addMonths(new Date(), -2))
-  const summary = data.members.map((member) => {
-    const records = data.records.filter((record) => record.memberId === member.id && record.date >= threeMonthsAgo)
-    return { ...member, count: records.length, lastDate: records.map((item) => item.date).sort().at(-1) }
-  }).filter((member) => member.name.includes(search.trim())).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''))
-  return <section className="admin-section"><div className="section-head"><div><span className="eyebrow">ADMIN ONLY</span><h2>3개월 활동 현황</h2><p>멤버가 직접 저장한 운동 기록을 기준으로 집계됩니다.</p></div><label className="search"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름으로 찾기" /></label></div><div className="member-table"><div className="member-row table-label"><span>멤버</span><span>3개월 기록</span><span>마지막 기록일</span><span>권한</span></div>{summary.map((member) => <div className="member-row" key={member.id}><span className="member-name"><b className="avatar large">{member.name.slice(0, 1)}</b><b>{member.name}</b></span><span><b>{member.count}회</b></span><span>{member.lastDate || '아직 없음'}</span><span><em className={member.isAdmin ? 'present' : 'role'}>{member.isAdmin ? '운영진' : '멤버'}</em></span></div>)}</div></section>
+  const [expanded, setExpanded] = useState(null)
+  const from = currentQuarterStart()
+  const rows = data.members.map((item) => { const dates = data.records.filter((record) => record.memberId === item.id && record.date >= from).map((record) => record.date).sort().reverse(); return { ...item, dates, count: dates.length, lastDate: dates[0] } }).filter((item) => item.name.includes(search.trim())).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''))
+  return <section className="admin-section" id="operations"><div className="section-head"><div><span className="eyebrow">OPERATOR VIEW</span><h2>이번 분기 참여 현황</h2><p>운영진은 전체 멤버의 출석 횟수와 참여 날짜를 확인할 수 있습니다.</p></div><label className="search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름으로 찾기" /></label></div><div className="member-table"><div className="member-row table-label"><span>멤버</span><span>이번 분기</span><span>마지막 참여일</span><span>권한</span></div>{rows.map((item) => <div key={item.id}><button className="member-row member-button" onClick={() => setExpanded(expanded === item.id ? null : item.id)}><span className="member-name"><b className="avatar large">{item.name.slice(0, 1)}</b><b>{item.name}</b></span><span><b>{item.count}회</b></span><span>{item.lastDate ? formatDate(item.lastDate) : '아직 없음'}</span><span><em className={`role ${item.role}`}>{roleLabel(item.role)}</em></span></button>{expanded === item.id && <div className="member-dates">{item.dates.length ? item.dates.map((date) => <span key={date}>{formatDate(date)}</span>) : '이번 분기 출석 기록이 없습니다.'}</div>}</div>)}</div></section>
 }
 
 function Dashboard({ member, onExit }) {
-  const [data, setData] = useState({ members: [], records: [] })
+  const [data, setData] = useState({ members: [], records: [], notice: null })
   const [month, setMonth] = useState(monthStart(new Date()))
-  const [modal, setModal] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [noticeOpen, setNoticeOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const refresh = useCallback(async () => { setLoading(true); try { setData(await getDashboard(member)) } finally { setLoading(false) } }, [member])
   useEffect(() => { refresh() }, [refresh])
-  const ownRecords = data.records.filter((record) => record.memberId === member.id)
-  const threeMonthsAgo = dayKey(addMonths(new Date(), -2))
-  const count = ownRecords.filter((record) => record.date >= threeMonthsAgo).length
-  return <div className="dashboard"><header className="topbar"><a className="wordmark" href="#top"><span>P</span> PICKLIMB</a><nav><a href="#calendar">내 기록</a>{member.isAdmin && <a href="#admin">운영 현황</a>}</nav><div className="profile"><span className="avatar">{member.name.slice(0, 1)}</span><span>{member.name}{member.isAdmin && ' · 운영진'}</span><button onClick={onExit}>나가기</button></div></header><main id="top" className="content"><section className="hero activity-hero"><div><span className="eyebrow lime">PICKLIMB ACTIVITY</span><h1>움직인 오늘을,<br /><i>기록</i>해요.</h1><p>실제 참여 확인은 서로의 신뢰로, 기록은 투명하게 남겨요.</p></div><div className="hero-stats"><span>최근 3개월</span><strong>{count}<small>회</small></strong><p>내 운동 기록</p></div></section>{loading ? <div className="empty">기록을 불러오는 중이에요.</div> : <div id="calendar"><Calendar month={month} records={ownRecords} onMove={(amount) => setMonth((current) => addMonths(current, amount))} onOpen={(date, record) => setModal({ date, record })} /></div>}{member.isAdmin && !loading && <div id="admin"><AdminPanel data={data} /></div>}</main><footer>© PICKLIMB · 함께, 꾸준히.</footer>{modal && <RecordModal {...modal} member={member} onClose={() => setModal(null)} onSaved={refresh} />}</div>
+  const quarterStart = currentQuarterStart()
+  const ownCount = useMemo(() => data.records.filter((record) => record.memberId === member.id && record.date >= quarterStart).length, [data.records, member.id, quarterStart])
+  const totalCount = useMemo(() => data.records.filter((record) => record.date >= quarterStart).length, [data.records, quarterStart])
+  const entriesForSelectedDate = data.records.filter((record) => record.date === selectedDate)
+  return <div className="dashboard"><header className="topbar"><a className="wordmark" href="#top"><span>P</span> PICKLIMB</a><nav><a href="#calendar">출석 현황</a>{canOperate(member) && <a href="#operations">운영 현황</a>}<a href="#guide">공지사항 · 이용가이드</a></nav><div className="profile"><span className="avatar">{member.name.slice(0, 1)}</span><span>{member.name} · {roleLabel(member.role)}</span><button onClick={onExit}>나가기</button></div></header><main id="top" className="content"><section className="hero activity-hero"><div><span className="eyebrow lime">PICKLIMB ACTIVITY</span><h1>안전하고 행복한<br /><i>운동 라이프</i></h1><p>실제 운동 후 서로의 신뢰를 바탕으로 출석을 남겨 주세요.</p></div><div className="hero-stats"><span>이번 분기</span><strong>{ownCount}<small>회</small></strong><p>내 출석 현황</p><em>전체 {totalCount}회</em></div></section>{loading ? <div className="empty">출석 현황을 불러오는 중이에요.</div> : <><div id="calendar" className="desktop-calendar"><Calendar month={month} records={data.records} member={member} onMove={(amount) => setMonth((current) => addMonths(current, amount))} onOpen={setSelectedDate} onTodayCheck={() => setSelectedDate(dayKey(new Date()))} /></div><MobileTimeline records={data.records} member={member} onOpen={setSelectedDate} /><section className="my-quarter"><span className="eyebrow">MY QUARTER</span><h2>이번 분기, <b>{ownCount}회</b> 함께했어요.</h2><p>출석 체크는 운동에 참여한 날만 남겨 주세요.</p></section><section id="guide" className="guide-card"><div><span className="eyebrow">NOTICE · GUIDE</span><h2>{data.notice?.title}</h2><p>{data.notice?.content}</p></div>{isAdmin(member) && <button className="text-button" onClick={() => setNoticeOpen(true)}>관리자 수정</button>}</section>{canOperate(member) && <OperatorPanel data={data} />}</>}</main><footer>© PICKLIMB · 함께, 꾸준히.</footer>{selectedDate && <DayModal date={selectedDate} records={entriesForSelectedDate} member={member} onClose={() => setSelectedDate(null)} onChanged={refresh} />}{noticeOpen && <NoticeModal notice={data.notice} onClose={() => setNoticeOpen(false)} onSaved={refresh} />}</div>
 }
 
 export default function App() {
-  const [member, setMember] = useState(() => { try { return JSON.parse(sessionStorage.getItem('picklimb-member-v2')) } catch { return null } })
-  const enter = (next) => { sessionStorage.setItem('picklimb-member-v2', JSON.stringify(next)); setMember(next) }
-  const exit = async () => { await logout(); sessionStorage.removeItem('picklimb-member-v2'); setMember(null) }
+  const [member, setMember] = useState(() => { try { return JSON.parse(sessionStorage.getItem('picklimb-member-v3')) } catch { return null } })
+  const enter = (next) => { sessionStorage.setItem('picklimb-member-v3', JSON.stringify(next)); setMember(next) }
+  const exit = async () => { await logout(); sessionStorage.removeItem('picklimb-member-v3'); setMember(null) }
   return member ? <Dashboard member={member} onExit={exit} /> : <Login onEnter={enter} />
 }

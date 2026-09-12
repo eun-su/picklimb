@@ -56,16 +56,16 @@ export default async function handler(request, response) {
     }
 
     const data = member.data()
-    const isAdmin = data.role === 'admin'
+    const role = ['admin', 'staff', 'member'].includes(data.role) ? data.role : 'member'
     await db.collection('loginAttempts').doc(toAttemptId(ip, name)).delete()
     await db.collection('members').doc(member.id).set({
       name: data.name,
-      role: isAdmin ? 'admin' : 'member',
+      role,
       updatedAt: FieldValue.serverTimestamp(),
       lastLoginAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    const token = await auth.createCustomToken(member.id, { admin: isAdmin })
-    return response.status(200).json({ token, member: { id: member.id, name: data.name, isAdmin } })
+    const token = await auth.createCustomToken(member.id, { role })
+    return response.status(200).json({ token, member: { id: member.id, name: data.name, role } })
   } catch (error) {
     console.error('login failed', error)
     return response.status(500).json({ message: '입장 확인 중 문제가 발생했어요. 운영진에게 문의해 주세요.' })

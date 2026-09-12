@@ -2,6 +2,7 @@
   "serviceAccountPath": "./service-account.json",
   "members": [
     { "id": "admin-hong", "name": "홍운영", "code": "개별-운영진-코드", "role": "admin" },
+    { "id": "staff-lee", "name": "이운영", "code": "개별-운영진-코드", "role": "staff" },
     { "id": "member-kim", "name": "김피클", "code": "개별-참여-코드", "role": "member" }
   ]
 }
