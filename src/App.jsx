@@ -12,12 +12,12 @@ const formatDate = (key) => new Intl.DateTimeFormat('ko-KR', { month: 'long', da
 const roleLabel = (role) => ({ admin: '관리자', staff: '운영진', member: '정회원' }[role] || '정회원')
 const currentQuarterStart = () => { const now = new Date(); return dayKey(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)) }
 
-function Login() {
+function Login({ error = '' }) {
   const params = new URLSearchParams(window.location.search)
   const cancelled = params.get('login_error') === 'kakao_cancelled'
   return <main className="login-page">
     <section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>피리부는 출석체크</h1><p>함께 움직인 하루를 간단하고 투명하게 남겨요.</p><div className="intro-line" /><p className="intro-note">카카오 계정으로 본인만 안전하게 출석을 남길 수 있습니다.</p></section>
-    <section className="login-panel"><div className="login-card"><span className="eyebrow">KAKAO MEMBER ACCESS</span><h2>카카오톡 입장</h2><p className="muted">카카오 계정의 고유 회원번호로 본인 출석을 안전하게 연결합니다.</p>{cancelled && <p className="form-error">카카오 로그인이 취소되었어요. 다시 시도해 주세요.</p>}<button className="kakao-button" onClick={beginKakaoLogin}><b>k</b> 카카오로 시작하기</button><p className="help-text">처음 로그인한 카카오 계정은 정회원으로 시작합니다.</p></div></section>
+    <section className="login-panel"><div className="login-card"><span className="eyebrow">KAKAO MEMBER ACCESS</span><h2>카카오톡 입장</h2><p className="muted">카카오 계정의 고유 회원번호로 본인 출석을 안전하게 연결합니다.</p>{(cancelled || error) && <p className="form-error">{error || '카카오 로그인이 취소되었어요. 다시 시도해 주세요.'}</p>}<button className="kakao-button" onClick={beginKakaoLogin}><b>k</b> 카카오로 시작하기</button><p className="help-text">처음 로그인한 카카오 계정은 정회원으로 시작합니다.</p></div></section>
   </main>
 }
 
@@ -97,15 +97,16 @@ function Dashboard({ member, onExit }) {
 export default function App() {
   const [member, setMember] = useState(() => { try { return JSON.parse(sessionStorage.getItem('picklimb-kakao-member')) } catch { return null } })
   const [booting, setBooting] = useState(true)
+  const [loginError, setLoginError] = useState('')
   useEffect(() => {
     const finishLogin = async () => {
       const token = sessionStorage.getItem('picklimb-kakao-token')
       if (!token) { setBooting(false); return }
-      try { await completeKakaoLogin(token); setMember(JSON.parse(sessionStorage.getItem('picklimb-kakao-member'))) } catch { sessionStorage.removeItem('picklimb-kakao-member'); setMember(null) } finally { sessionStorage.removeItem('picklimb-kakao-token'); setBooting(false) }
+      try { await completeKakaoLogin(token); setMember(JSON.parse(sessionStorage.getItem('picklimb-kakao-member'))) } catch (reason) { console.error('Firebase custom-token login failed', reason); sessionStorage.removeItem('picklimb-kakao-member'); setMember(null); setLoginError(reason?.code === 'auth/custom-token-mismatch' ? 'Firebase 서비스 계정과 웹 앱이 서로 다른 프로젝트입니다. 운영진에게 Firebase 설정 확인을 요청해 주세요.' : `카카오 계정 연결에 실패했어요. (${reason?.code || 'unknown'})`) } finally { sessionStorage.removeItem('picklimb-kakao-token'); setBooting(false) }
     }
     finishLogin()
   }, [])
   const exit = async () => { await logout(); sessionStorage.removeItem('picklimb-kakao-member'); setMember(null) }
   if (booting) return <main className="boot-screen">카카오 로그인 상태를 확인하고 있어요.</main>
-  return member ? <Dashboard member={member} onExit={exit} /> : <Login />
+  return member ? <Dashboard member={member} onExit={exit} /> : <Login error={loginError} />
 }
