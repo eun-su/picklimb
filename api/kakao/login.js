@@ -9,7 +9,7 @@ const escapedJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c')
 const bootstrapAdmins = () => new Set(String(process.env.KAKAO_BOOTSTRAP_ADMIN_IDS || '').split(',').map((value) => value.trim()).filter(Boolean))
 
 function callbackHtml(token, member) {
-  return `<!doctype html><html lang="ko"><meta charset="utf-8"><title>피클즈 로그인 중</title><body><p>피클즈 출석체크로 이동하고 있어요.</p><script>sessionStorage.setItem('picklimb-kakao-token', ${escapedJson(token)});sessionStorage.setItem('picklimb-kakao-member', ${escapedJson(member)});location.replace('/');</script></body></html>`
+  return `<!doctype html><html lang="ko"><meta charset="utf-8"><title>피클즈 로그인 중</title><body><p>피클즈 출석체크로 이동하고 있어요.</p><script>sessionStorage.setItem('picklimb-kakao-token', ${escapedJson(token)});sessionStorage.setItem('picklimb-kakao-member', ${escapedJson(JSON.stringify(member))});location.replace('/');</script></body></html>`
 }
 
 export default async function handler(request, response) {
