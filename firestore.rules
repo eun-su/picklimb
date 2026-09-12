@@ -1,9 +1,43 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 익명 로그인 사용자를 포함해 Firebase Authentication 사용자를 제한합니다.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.token.admin == true; }
+    function ownsRecord() { return signedIn() && resource.data.memberId == request.auth.uid; }
+    function validRecord() {
+      return request.resource.data.memberId == request.auth.uid
+        && request.resource.data.memberName == get(/databases/$(database)/documents/members/$(request.auth.uid)).data.name
+        && request.resource.data.date is string
+        && request.resource.data.note is string
+        && request.resource.data.note.size() > 0
+        && request.resource.data.note.size() <= 240
+        && request.resource.data.keys().hasOnly(['memberId', 'memberName', 'date', 'note', 'updatedAt']);
+    }
+
+    // 승인 멤버 목록과 로그인 시도 기록은 Vercel 서버만 읽고 씁니다.
+    match /allowedMembers/{memberId} { allow read, write: if false; }
+    match /loginAttempts/{attemptId} { allow read, write: if false; }
+
+    match /members/{memberId} {
+      allow get: if signedIn() && (request.auth.uid == memberId || admin());
+      allow list: if admin();
+      allow write: if false;
+    }
+
+    match /attendance/{recordId} {
+      allow get: if admin() || ownsRecord();
+      allow list: if admin() || (signedIn() && resource.data.memberId == request.auth.uid);
+      allow create: if signedIn() && validRecord();
+      allow update: if admin() || (ownsRecord() && validRecord()
+        && request.resource.data.memberId == resource.data.memberId
+        && request.resource.data.memberName == resource.data.memberName
+        && request.resource.data.date == resource.data.date);
+      allow delete: if admin() || ownsRecord();
+    }
+
+    match /events/{eventId} {
+      allow read: if signedIn();
+      allow write: if admin();
     }
   }
 }

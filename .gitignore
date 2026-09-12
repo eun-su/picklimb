@@ -1,4 +1,6 @@
 .DS_Store
 dist
 .env.local
+members.private.json
+service-account.json
 .DS_Store

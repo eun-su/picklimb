@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, signInAnonymously } from 'firebase/auth'
-import { addDoc, collection, doc, getDocs, getFirestore, setDoc } from 'firebase/firestore'
+import { getAuth, signInWithCustomToken, signOut } from 'firebase/auth'
+import { collection, deleteDoc, doc, getDocs, getFirestore, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 
-const firebaseConfig = {
+const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -10,98 +10,86 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
-const firebaseReady = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId)
+const enabled = Boolean(config.apiKey && config.projectId && config.appId)
 let db
 let auth
 
-const demoEvents = [
-  { id: 'event-seoul-run', title: '한강 러닝', startsAt: '2026-09-14T10:00:00+09:00', place: '잠실 한강공원' },
-  { id: 'event-climb', title: '클라이밍 데이', startsAt: '2026-09-20T14:00:00+09:00', place: '더클라임 신림점' },
-  { id: 'event-hike', title: '북한산 하이킹', startsAt: '2026-09-27T09:00:00+09:00', place: '불광역 2번 출구' },
-]
-const demoMembers = [
-  { id: 'demo-1', name: '김피클', attendanceCount: 8, lastAttendanceAt: '2026-09-07T10:00:00+09:00' },
-  { id: 'demo-2', name: '이운동', attendanceCount: 6, lastAttendanceAt: '2026-08-30T10:00:00+09:00' },
-  { id: 'demo-3', name: '박클라임', attendanceCount: 5, lastAttendanceAt: '2026-08-23T10:00:00+09:00' },
-  { id: 'demo-4', name: '최러너', attendanceCount: 3, lastAttendanceAt: '2026-08-16T10:00:00+09:00' },
-]
-const demoAttendance = [
-  { id: 'a-1', eventId: 'event-seoul-run', memberId: 'demo-1', memberName: '김피클', checkedAt: '2026-09-14T10:03:00+09:00' },
-  { id: 'a-2', eventId: 'event-seoul-run', memberId: 'demo-2', memberName: '이운동', checkedAt: '2026-09-14T10:05:00+09:00' },
-]
-const memory = { events: [...demoEvents], members: [...demoMembers], attendance: [...demoAttendance] }
+const demoMember = { id: 'demo-member', name: '김피클', isAdmin: false }
+const demoAdmin = { id: 'demo-admin', name: '홍운영', isAdmin: true }
+const memory = {
+  members: [demoAdmin, demoMember, { id: 'demo-lee', name: '이운동', isAdmin: false }],
+  records: [{ id: 'demo-member_2026-09-05', memberId: 'demo-member', memberName: '김피클', date: '2026-09-05', note: '한강 5km 러닝' }],
+}
 
-async function firebase() {
-  if (!firebaseReady) return null
+function firebase() {
+  if (!enabled) return null
   if (!db) {
-    const app = initializeApp(firebaseConfig)
+    const app = initializeApp(config)
     db = getFirestore(app)
     auth = getAuth(app)
-    if (!auth.currentUser) await signInAnonymously(auth)
   }
-  return db
+  return { db, auth }
 }
-
-const safeId = (name) => `member-${name.trim().toLowerCase().replace(/[^a-z0-9가-힣]/g, '-')}`
 
 export async function verifyMemberAccess(name, code) {
-  const trimmedName = name.trim()
-  if (!trimmedName || !code.trim()) throw new Error('성함과 참여코드를 모두 입력해 주세요.')
-  // VITE_ACCESS_CODE is a convenience gate only. Firestore rules enforce real data access.
-  const expectedCode = import.meta.env.VITE_ACCESS_CODE || 'PICKLIMB'
-  const adminCode = import.meta.env.VITE_ADMIN_CODE || 'PICKLIMB_ADMIN'
-  const isAdmin = code.trim() === adminCode
-  if (code.trim() !== expectedCode && !isAdmin) throw new Error('참여코드가 맞지 않아요. 다시 확인해 주세요.')
-  const member = { id: safeId(trimmedName), name: trimmedName, isAdmin }
-  const database = await firebase()
-  if (database) {
-    const existing = await getDocs(collection(database, 'members'))
-    const found = existing.docs.find((item) => item.id === member.id)
-    await setDoc(doc(database, 'members', member.id), { ...found?.data(), ...member, updatedAt: new Date().toISOString() }, { merge: true })
-  } else if (!memory.members.some((item) => item.id === member.id)) {
-    memory.members.push({ ...member, attendanceCount: 0, lastAttendanceAt: null })
+  if (!name.trim() || !code.trim()) throw new Error('성함과 참여코드를 모두 입력해 주세요.')
+  const service = firebase()
+  if (!service) {
+    if (code === 'PICKLIMB_ADMIN') return demoAdmin
+    if (code === 'PICKLIMB') return { ...demoMember, name: name.trim() }
+    throw new Error('참여코드가 맞지 않아요.')
   }
-  return member
-}
-
-export async function getDashboard() {
-  const database = await firebase()
-  if (!database) return structuredClone({
-    events: [...memory.events].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)),
-    members: [...memory.members].sort((a, b) => new Date(b.lastAttendanceAt || 0) - new Date(a.lastAttendanceAt || 0)),
-    attendance: memory.attendance,
+  const response = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, code }),
   })
-  const [events, members, attendance] = await Promise.all(['events', 'members', 'attendance'].map(async (name) => {
-    const snapshot = await getDocs(collection(database, name))
-    return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
-  }))
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.message || '입장 확인에 실패했어요.')
+  await signInWithCustomToken(service.auth, result.token)
+  return result.member
+}
+
+export async function logout() {
+  const service = firebase()
+  if (service?.auth) await signOut(service.auth)
+}
+
+export async function getDashboard(member) {
+  const service = firebase()
+  if (!service) return structuredClone({
+    members: member.isAdmin ? memory.members : memory.members.filter((item) => item.id === member.id),
+    records: member.isAdmin ? memory.records : memory.records.filter((item) => item.memberId === member.id),
+  })
+  const ownRecords = getDocs(query(collection(service.db, 'attendance'), where('memberId', '==', member.id)))
+  if (!member.isAdmin) {
+    const records = (await ownRecords).docs.map((item) => ({ id: item.id, ...item.data() }))
+    return { members: [member], records }
+  }
+  const [recordsSnapshot, membersSnapshot] = await Promise.all([getDocs(collection(service.db, 'attendance')), getDocs(collection(service.db, 'members'))])
   return {
-    events: events.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)),
-    members: members.sort((a, b) => new Date(b.lastAttendanceAt || 0) - new Date(a.lastAttendanceAt || 0)),
-    attendance,
+    members: membersSnapshot.docs.map((item) => ({ id: item.id, ...item.data(), isAdmin: item.data().role === 'admin' })),
+    records: recordsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
   }
 }
 
-export async function markAttendance({ event, member }) {
-  const database = await firebase()
-  const checkedAt = new Date().toISOString()
-  if (!database) {
-    if (memory.attendance.some((item) => item.eventId === event.id && item.memberId === member.id)) return
-    memory.attendance.push({ id: `${event.id}-${member.id}`, eventId: event.id, memberId: member.id, memberName: member.name, checkedAt })
-    const index = memory.members.findIndex((item) => item.id === member.id)
-    const current = memory.members[index] || { ...member, attendanceCount: 0 }
-    memory.members[index] = { ...current, attendanceCount: (current.attendanceCount || 0) + 1, lastAttendanceAt: event.startsAt }
+export async function saveRecord(member, { date, note }) {
+  const cleanNote = note.trim()
+  if (!cleanNote) throw new Error('운동 내용을 입력해 주세요.')
+  const service = firebase()
+  const id = `${member.id}_${date}`
+  if (!service) {
+    const index = memory.records.findIndex((item) => item.id === id)
+    const record = { id, memberId: member.id, memberName: member.name, date, note: cleanNote }
+    if (index < 0) memory.records.push(record); else memory.records[index] = record
     return
   }
-  const recordId = `${event.id}_${member.id}`
-  await setDoc(doc(database, 'attendance', recordId), { eventId: event.id, memberId: member.id, memberName: member.name, checkedAt }, { merge: true })
-  const all = await getDocs(collection(database, 'attendance'))
-  const count = all.docs.filter((item) => item.data().memberId === member.id).length
-  await setDoc(doc(database, 'members', member.id), { ...member, attendanceCount: count, lastAttendanceAt: event.startsAt, updatedAt: checkedAt }, { merge: true })
+  await setDoc(doc(service.db, 'attendance', id), {
+    memberId: member.id, memberName: member.name, date, note: cleanNote, updatedAt: serverTimestamp(),
+  }, { merge: true })
 }
 
-export async function saveEvent(event) {
-  const database = await firebase()
-  if (!database) { memory.events.push({ id: `event-${Date.now()}`, ...event }); return }
-  await addDoc(collection(database, 'events'), { ...event, createdAt: new Date().toISOString() })
+export async function removeRecord(member, date) {
+  const service = firebase()
+  const id = `${member.id}_${date}`
+  if (!service) { memory.records = memory.records.filter((item) => item.id !== id); return }
+  await deleteDoc(doc(service.db, 'attendance', id))
 }
