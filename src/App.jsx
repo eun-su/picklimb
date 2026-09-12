@@ -102,7 +102,7 @@ export default function App() {
     const finishLogin = async () => {
       const token = sessionStorage.getItem('picklimb-kakao-token')
       if (!token) { setBooting(false); return }
-      try { await completeKakaoLogin(token); setMember(JSON.parse(sessionStorage.getItem('picklimb-kakao-member'))) } catch (reason) { console.error('Firebase custom-token login failed', reason); sessionStorage.removeItem('picklimb-kakao-member'); setMember(null); setLoginError(reason?.code === 'auth/custom-token-mismatch' ? 'Firebase 서비스 계정과 웹 앱이 서로 다른 프로젝트입니다. 운영진에게 Firebase 설정 확인을 요청해 주세요.' : `카카오 계정 연결에 실패했어요. (${reason?.code || 'unknown'})`) } finally { sessionStorage.removeItem('picklimb-kakao-token'); setBooting(false) }
+      try { await completeKakaoLogin(token); setMember(JSON.parse(sessionStorage.getItem('picklimb-kakao-member'))) } catch (reason) { console.error('Firebase custom-token login failed', reason); sessionStorage.removeItem('picklimb-kakao-member'); setMember(null); setLoginError(reason?.code === 'auth/custom-token-mismatch' ? 'Firebase 서비스 계정과 웹 앱이 서로 다른 프로젝트입니다. 운영진에게 Firebase 설정 확인을 요청해 주세요.' : `카카오 계정 연결에 실패했어요. ${reason?.message || `(${reason?.code || 'unknown'})`}`) } finally { sessionStorage.removeItem('picklimb-kakao-token'); setBooting(false) }
     }
     finishLogin()
   }, [])

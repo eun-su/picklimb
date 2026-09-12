@@ -10,7 +10,13 @@ const config = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
-const enabled = Boolean(config.apiKey && config.projectId && config.appId)
+const requiredFirebaseSettings = {
+  VITE_FIREBASE_API_KEY: config.apiKey,
+  VITE_FIREBASE_PROJECT_ID: config.projectId,
+  VITE_FIREBASE_APP_ID: config.appId,
+}
+const missingFirebaseSettings = Object.entries(requiredFirebaseSettings).filter(([, value]) => !value).map(([key]) => key)
+const enabled = missingFirebaseSettings.length === 0
 const demoEnabled = import.meta.env.DEV && !enabled
 let db
 let auth
@@ -35,7 +41,7 @@ export function beginKakaoLogin() { window.location.assign('/api/kakao/login') }
 
 export async function completeKakaoLogin(token) {
   const service = firebase()
-  if (!service) throw new Error('서비스 설정이 완료되지 않았어요. 운영진에게 문의해 주세요.')
+  if (!service) throw new Error(`Firebase 웹 설정이 배포에 포함되지 않았어요: ${missingFirebaseSettings.join(', ')}`)
   await signInWithCustomToken(service.auth, token)
 }
 
