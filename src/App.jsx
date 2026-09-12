@@ -17,7 +17,7 @@ function Login() {
   const cancelled = params.get('login_error') === 'kakao_cancelled'
   return <main className="login-page">
     <section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>피리부는 출석체크</h1><p>함께 움직인 하루를 간단하고 투명하게 남겨요.</p><div className="intro-line" /><p className="intro-note">카카오 계정으로 본인만 안전하게 출석을 남길 수 있습니다.</p></section>
-    <section className="login-panel"><div className="login-card"><span className="eyebrow">KAKAO MEMBER ACCESS</span><h2>카카오로 입장</h2><p className="muted">카카오 계정의 고유 회원번호로 본인 출석을 안전하게 연결합니다.</p>{cancelled && <p className="form-error">카카오 로그인이 취소되었어요. 다시 시도해 주세요.</p>}<button className="kakao-button" onClick={beginKakaoLogin}><b>k</b> 카카오로 시작하기</button><p className="help-text">처음 로그인한 카카오 계정은 정회원으로 시작합니다.</p></div></section>
+    <section className="login-panel"><div className="login-card"><span className="eyebrow">KAKAO MEMBER ACCESS</span><h2>카카오톡 입장</h2><p className="muted">카카오 계정의 고유 회원번호로 본인 출석을 안전하게 연결합니다.</p>{cancelled && <p className="form-error">카카오 로그인이 취소되었어요. 다시 시도해 주세요.</p>}<button className="kakao-button" onClick={beginKakaoLogin}><b>k</b> 카카오로 시작하기</button><p className="help-text">처음 로그인한 카카오 계정은 정회원으로 시작합니다.</p></div></section>
   </main>
 }
 
