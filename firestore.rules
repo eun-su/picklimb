@@ -13,10 +13,6 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['memberId', 'memberName', 'date', 'updatedAt']);
     }
 
-    // Vercel 로그인 서버만 접근합니다.
-    match /allowedMembers/{memberId} { allow read, write: if false; }
-    match /loginAttempts/{attemptId} { allow read, write: if false; }
-
     match /members/{memberId} {
       allow get: if signedIn() && (request.auth.uid == memberId || operator());
       allow list: if operator();

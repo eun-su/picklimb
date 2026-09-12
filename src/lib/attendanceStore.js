@@ -31,20 +31,12 @@ function firebase() {
 export const canOperate = (member) => ['admin', 'staff'].includes(member.role)
 export const isAdmin = (member) => member.role === 'admin'
 
-export async function verifyMemberAccess(name, code) {
-  if (!name.trim() || !code.trim()) throw new Error('성함과 참여코드를 모두 입력해 주세요.')
+export function beginKakaoLogin() { window.location.assign('/api/kakao/login') }
+
+export async function completeKakaoLogin(token) {
   const service = firebase()
-  if (!service) {
-    if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요. 운영진에게 문의해 주세요.')
-    const found = demoMembers.find((member) => member.name === name.trim())
-    if (!found || code !== 'PICKLIMB') throw new Error('등록된 멤버 정보와 일치하지 않습니다.')
-    return found
-  }
-  const response = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, code }) })
-  const result = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(result.message || '입장 확인에 실패했어요.')
-  await signInWithCustomToken(service.auth, result.token)
-  return result.member
+  if (!service) throw new Error('서비스 설정이 완료되지 않았어요. 운영진에게 문의해 주세요.')
+  await signInWithCustomToken(service.auth, token)
 }
 
 export async function logout() { const service = firebase(); if (service) await signOut(service.auth) }
@@ -90,4 +82,15 @@ export async function saveNotice(notice) {
     memory.notice = notice; return
   }
   await setDoc(doc(service.db, 'notices', 'guide'), { ...notice, updatedAt: serverTimestamp() })
+}
+
+export async function changeMemberRole(memberId, role) {
+  const service = firebase()
+  if (!service || !service.auth.currentUser) throw new Error('로그인 상태를 다시 확인해 주세요.')
+  const token = await service.auth.currentUser.getIdToken()
+  const response = await fetch('/api/admin/member-role', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ memberId, role }),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.message || '권한 변경에 실패했어요.')
 }

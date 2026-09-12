@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { canOperate, checkIn, getDashboard, isAdmin, logout, removeCheckIn, saveNotice, verifyMemberAccess } from './lib/attendanceStore'
+import { beginKakaoLogin, canOperate, changeMemberRole, checkIn, completeKakaoLogin, getDashboard, isAdmin, logout, removeCheckIn, saveNotice } from './lib/attendanceStore'
 import './App.css'
 
 const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -12,18 +12,12 @@ const formatDate = (key) => new Intl.DateTimeFormat('ko-KR', { month: 'long', da
 const roleLabel = (role) => ({ admin: '관리자', staff: '운영진', member: '정회원' }[role] || '정회원')
 const currentQuarterStart = () => { const now = new Date(); return dayKey(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)) }
 
-function Login({ onEnter }) {
-  const [name, setName] = useState('')
-  const [code, setCode] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const submit = async (event) => {
-    event.preventDefault(); setError(''); setLoading(true)
-    try { onEnter(await verifyMemberAccess(name, code)) } catch (reason) { setError(reason.message) } finally { setLoading(false) }
-  }
+function Login() {
+  const params = new URLSearchParams(window.location.search)
+  const cancelled = params.get('login_error') === 'kakao_cancelled'
   return <main className="login-page">
-    <section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>피리부는 클라이머<br />출석체크</h1><p>함께 움직인 하루를 간단하고 투명하게 남겨요.</p><div className="intro-line" /><p className="intro-note">승인된 피클즈 멤버만 입장할 수 있습니다.</p></section>
-    <section className="login-panel"><div className="login-card"><span className="eyebrow">MEMBER ACCESS</span><h2>출석 기록 입장</h2><p className="muted">등록된 성함과 개인 참여코드를 입력해 주세요.</p><form onSubmit={submit}><label htmlFor="name">성함</label><input id="name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김피클" /><label htmlFor="code">개인 참여코드</label><input id="code" type="password" autoComplete="current-password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="참여코드 입력" />{error && <p className="form-error">{error}</p>}<button className="button primary" disabled={loading}>{loading ? '확인 중...' : '입장하기'} <span>→</span></button></form><p className="help-text">반복된 로그인 실패 시 잠시 입장이 제한됩니다.</p></div></section>
+    <section className="login-intro"><div className="brand-mark">P</div><span className="eyebrow lime">PICKLIMB ATTENDANCE</span><h1>피리부는 클라이머<br />출석체크</h1><p>함께 움직인 하루를 간단하고 투명하게 남겨요.</p><div className="intro-line" /><p className="intro-note">카카오 계정으로 본인만 안전하게 출석을 남길 수 있습니다.</p></section>
+    <section className="login-panel"><div className="login-card"><span className="eyebrow">KAKAO MEMBER ACCESS</span><h2>카카오로 입장</h2><p className="muted">카카오 계정의 고유 회원번호로 본인 출석을 안전하게 연결합니다.</p>{cancelled && <p className="form-error">카카오 로그인이 취소되었어요. 다시 시도해 주세요.</p>}<button className="kakao-button" onClick={beginKakaoLogin}><b>k</b> 카카오로 시작하기</button><p className="help-text">처음 로그인한 카카오 계정은 정회원으로 시작합니다.</p></div></section>
   </main>
 }
 
@@ -76,12 +70,13 @@ function MobileTimeline({ records, member, onOpen }) {
   return <section className="mobile-timeline"><div className="mobile-list-head"><span className="eyebrow">DAILY CHECK-IN</span><h2>날짜별 출석</h2></div><button className="load-more" onClick={() => setBefore((value) => value + 7)}>이전 7일 더 보기</button>{days.map((date) => { const key = dayKey(date); const entries = grouped.get(key) || []; const mine = entries.some((record) => record.memberId === member.id); return <button className={`timeline-row ${key === dayKey(today) ? 'today' : ''}`} onClick={() => onOpen(key)} key={key}><span className="timeline-date">{new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }).format(date)}</span><span className="timeline-members">{entries.length ? `${entries.map((item) => item.memberName).join(' · ')}${mine ? ' · 나' : ''}` : '출석 기록 없음'}</span><b>{entries.length}명</b></button> })}<button className="load-more" onClick={() => setAfter((value) => value + 7)}>다음 7일 더 보기</button></section>
 }
 
-function OperatorPanel({ data }) {
+function OperatorPanel({ data, member, onRoleChanged }) {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(null)
   const from = currentQuarterStart()
   const rows = data.members.map((item) => { const dates = data.records.filter((record) => record.memberId === item.id && record.date >= from).map((record) => record.date).sort().reverse(); return { ...item, dates, count: dates.length, lastDate: dates[0] } }).filter((item) => item.name.includes(search.trim())).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''))
-  return <section className="admin-section" id="operations"><div className="section-head"><div><span className="eyebrow">OPERATOR VIEW</span><h2>이번 분기 참여 현황</h2><p>운영진은 전체 멤버의 출석 횟수와 참여 날짜를 확인할 수 있습니다.</p></div><label className="search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름으로 찾기" /></label></div><div className="member-table"><div className="member-row table-label"><span>멤버</span><span>이번 분기</span><span>마지막 참여일</span><span>권한</span></div>{rows.map((item) => <div key={item.id}><button className="member-row member-button" onClick={() => setExpanded(expanded === item.id ? null : item.id)}><span className="member-name"><b className="avatar large">{item.name.slice(0, 1)}</b><b>{item.name}</b></span><span><b>{item.count}회</b></span><span>{item.lastDate ? formatDate(item.lastDate) : '아직 없음'}</span><span><em className={`role ${item.role}`}>{roleLabel(item.role)}</em></span></button>{expanded === item.id && <div className="member-dates">{item.dates.length ? item.dates.map((date) => <span key={date}>{formatDate(date)}</span>) : '이번 분기 출석 기록이 없습니다.'}</div>}</div>)}</div></section>
+  const updateRole = async (event, target) => { event.stopPropagation(); await changeMemberRole(target.id, event.target.value); await onRoleChanged() }
+  return <section className="admin-section" id="operations"><div className="section-head"><div><span className="eyebrow">OPERATOR VIEW</span><h2>이번 분기 참여 현황</h2><p>운영진은 전체 멤버의 출석 횟수와 참여 날짜를 확인할 수 있습니다.</p></div><label className="search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름으로 찾기" /></label></div><div className="member-table"><div className="member-row table-label"><span>멤버</span><span>이번 분기</span><span>마지막 참여일</span><span>권한</span></div>{rows.map((item) => <div key={item.id}><div className="member-row member-button" role="button" tabIndex="0" onClick={() => setExpanded(expanded === item.id ? null : item.id)} onKeyDown={(event) => { if (event.key === 'Enter') setExpanded(expanded === item.id ? null : item.id) }}><span className="member-name"><b className="avatar large">{item.name.slice(0, 1)}</b><b>{item.name}</b></span><span><b>{item.count}회</b></span><span>{item.lastDate ? formatDate(item.lastDate) : '아직 없음'}</span><span>{isAdmin(member) ? <select className="role-select" value={item.role} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onChange={(event) => updateRole(event, item)}><option value="member">정회원</option><option value="staff">운영진</option><option value="admin">관리자</option></select> : <em className={`role ${item.role}`}>{roleLabel(item.role)}</em>}</span></div>{expanded === item.id && <div className="member-dates">{item.dates.length ? item.dates.map((date) => <span key={date}>{formatDate(date)}</span>) : '이번 분기 출석 기록이 없습니다.'}</div>}</div>)}</div></section>
 }
 
 function Dashboard({ member, onExit }) {
@@ -96,12 +91,21 @@ function Dashboard({ member, onExit }) {
   const ownCount = useMemo(() => data.records.filter((record) => record.memberId === member.id && record.date >= quarterStart).length, [data.records, member.id, quarterStart])
   const totalCount = useMemo(() => data.records.filter((record) => record.date >= quarterStart).length, [data.records, quarterStart])
   const entriesForSelectedDate = data.records.filter((record) => record.date === selectedDate)
-  return <div className="dashboard"><header className="topbar"><a className="wordmark" href="#top"><span>P</span> PICKLIMB</a><nav><a href="#calendar">출석 현황</a>{canOperate(member) && <a href="#operations">운영 현황</a>}<a href="#guide">공지사항 · 이용가이드</a></nav><div className="profile"><span className="avatar">{member.name.slice(0, 1)}</span><span>{member.name} · {roleLabel(member.role)}</span><button onClick={onExit}>나가기</button></div></header><main id="top" className="content"><section className="hero activity-hero"><div><span className="eyebrow lime">PICKLIMB ACTIVITY</span><h1>안전하고 행복한<br /><i>운동 라이프</i></h1><p>실제 운동 후 서로의 신뢰를 바탕으로 출석을 남겨 주세요.</p></div><div className="hero-stats"><span>이번 분기</span><strong>{ownCount}<small>회</small></strong><p>내 출석 현황</p><em>전체 {totalCount}회</em></div></section>{loading ? <div className="empty">출석 현황을 불러오는 중이에요.</div> : <><div id="calendar" className="desktop-calendar"><Calendar month={month} records={data.records} member={member} onMove={(amount) => setMonth((current) => addMonths(current, amount))} onOpen={setSelectedDate} onTodayCheck={() => setSelectedDate(dayKey(new Date()))} /></div><MobileTimeline records={data.records} member={member} onOpen={setSelectedDate} /><section className="my-quarter"><span className="eyebrow">MY QUARTER</span><h2>이번 분기, <b>{ownCount}회</b> 함께했어요.</h2><p>출석 체크는 운동에 참여한 날만 남겨 주세요.</p></section><section id="guide" className="guide-card"><div><span className="eyebrow">NOTICE · GUIDE</span><h2>{data.notice?.title}</h2><p>{data.notice?.content}</p></div>{isAdmin(member) && <button className="text-button" onClick={() => setNoticeOpen(true)}>관리자 수정</button>}</section>{canOperate(member) && <OperatorPanel data={data} />}</>}</main><footer>© PICKLIMB · 함께, 꾸준히.</footer>{selectedDate && <DayModal date={selectedDate} records={entriesForSelectedDate} member={member} onClose={() => setSelectedDate(null)} onChanged={refresh} />}{noticeOpen && <NoticeModal notice={data.notice} onClose={() => setNoticeOpen(false)} onSaved={refresh} />}</div>
+  return <div className="dashboard"><header className="topbar"><a className="wordmark" href="#top"><span>P</span> PICKLIMB</a><nav><a href="#calendar">출석 현황</a>{canOperate(member) && <a href="#operations">운영 현황</a>}<a href="#guide">공지사항 · 이용가이드</a></nav><div className="profile"><span className="avatar">{member.name.slice(0, 1)}</span><span>{member.name} · {roleLabel(member.role)}</span><button onClick={onExit}>나가기</button></div></header><main id="top" className="content"><section className="hero activity-hero"><div><span className="eyebrow lime">PICKLIMB ACTIVITY</span><h1>안전하고 행복한<br /><i>운동 라이프</i></h1><p>실제 운동 후 서로의 신뢰를 바탕으로 출석을 남겨 주세요.</p></div><div className="hero-stats"><span>이번 분기</span><strong>{ownCount}<small>회</small></strong><p>내 출석 현황</p><em>전체 {totalCount}회</em></div></section>{loading ? <div className="empty">출석 현황을 불러오는 중이에요.</div> : <><div id="calendar" className="desktop-calendar"><Calendar month={month} records={data.records} member={member} onMove={(amount) => setMonth((current) => addMonths(current, amount))} onOpen={setSelectedDate} onTodayCheck={() => setSelectedDate(dayKey(new Date()))} /></div><MobileTimeline records={data.records} member={member} onOpen={setSelectedDate} /><section className="my-quarter"><span className="eyebrow">MY QUARTER</span><h2>이번 분기, <b>{ownCount}회</b> 함께했어요.</h2><p>출석 체크는 운동에 참여한 날만 남겨 주세요.</p></section><section className="connection-card"><span>내 카카오 연결 ID</span><code>{member.connectionId || member.id.replace('kakao_', '')}</code><p>처음 관리자 권한을 연결할 때만 이 값을 사용합니다.</p></section><section id="guide" className="guide-card"><div><span className="eyebrow">NOTICE · GUIDE</span><h2>{data.notice?.title}</h2><p>{data.notice?.content}</p></div>{isAdmin(member) && <button className="text-button" onClick={() => setNoticeOpen(true)}>관리자 수정</button>}</section>{canOperate(member) && <OperatorPanel data={data} member={member} onRoleChanged={refresh} />}</>}</main><footer>© PICKLIMB · 함께, 꾸준히.</footer>{selectedDate && <DayModal date={selectedDate} records={entriesForSelectedDate} member={member} onClose={() => setSelectedDate(null)} onChanged={refresh} />}{noticeOpen && <NoticeModal notice={data.notice} onClose={() => setNoticeOpen(false)} onSaved={refresh} />}</div>
 }
 
 export default function App() {
-  const [member, setMember] = useState(() => { try { return JSON.parse(sessionStorage.getItem('picklimb-member-v3')) } catch { return null } })
-  const enter = (next) => { sessionStorage.setItem('picklimb-member-v3', JSON.stringify(next)); setMember(next) }
-  const exit = async () => { await logout(); sessionStorage.removeItem('picklimb-member-v3'); setMember(null) }
-  return member ? <Dashboard member={member} onExit={exit} /> : <Login onEnter={enter} />
+  const [member, setMember] = useState(() => { try { return JSON.parse(sessionStorage.getItem('picklimb-kakao-member')) } catch { return null } })
+  const [booting, setBooting] = useState(true)
+  useEffect(() => {
+    const finishLogin = async () => {
+      const token = sessionStorage.getItem('picklimb-kakao-token')
+      if (!token) { setBooting(false); return }
+      try { await completeKakaoLogin(token); setMember(JSON.parse(sessionStorage.getItem('picklimb-kakao-member'))) } catch { sessionStorage.removeItem('picklimb-kakao-member'); setMember(null) } finally { sessionStorage.removeItem('picklimb-kakao-token'); setBooting(false) }
+    }
+    finishLogin()
+  }, [])
+  const exit = async () => { await logout(); sessionStorage.removeItem('picklimb-kakao-member'); setMember(null) }
+  if (booting) return <main className="boot-screen">카카오 로그인 상태를 확인하고 있어요.</main>
+  return member ? <Dashboard member={member} onExit={exit} /> : <Login />
 }

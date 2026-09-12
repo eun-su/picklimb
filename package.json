@@ -7,11 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "provision:members": "node scripts/provision-members.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
     "firebase": "^12.19.0",
     "firebase-admin": "^14.4.0",
     "gsap": "^3.12.7",
