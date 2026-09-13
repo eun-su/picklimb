@@ -21,7 +21,7 @@ service cloud.firestore {
     }
 
     match /attendance/{recordId} {
-      allow read: if signedIn();
+      allow read: if signedIn() && (memberRole() != 'withdrawn' || resource.data.memberId == request.auth.uid);
       allow create: if administrator() || (activeMember() && validOwnCheckIn());
       allow update: if administrator() || (activeMember() && ownsRecord() && validOwnCheckIn()
         && request.resource.data.memberId == resource.data.memberId

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithCustomToken, signOut } from 'firebase/auth'
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -202,7 +202,10 @@ export async function getDashboard(member) {
     if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
     return structuredClone({ members: demoMembers, records: memory.records, notice: memory.notice })
   }
-  const tasks = [getDocs(collection(service.db, 'attendance')), getDoc(doc(service.db, 'notices', 'guide'))]
+  const attendance = member.role === 'withdrawn'
+    ? query(collection(service.db, 'attendance'), where('memberId', '==', member.id))
+    : collection(service.db, 'attendance')
+  const tasks = [getDocs(attendance), getDoc(doc(service.db, 'notices', 'guide'))]
   if (canOperate(member)) tasks.push(getDocs(collection(service.db, 'members')))
   const [recordsSnapshot, noticeSnapshot, membersSnapshot] = await Promise.all(tasks)
   return {
