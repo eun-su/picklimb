@@ -221,7 +221,10 @@ export async function checkIn(member, date) {
     if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
     if (!memory.records.some((item) => item.id === id)) memory.records.push({ id, memberId: member.id, memberName: member.name, date }); return
   }
-  await setDoc(doc(service.db, 'attendance', id), { memberId: member.id, memberName: member.name, date, updatedAt: serverTimestamp() })
+  const profile = await getDoc(doc(service.db, 'members', member.id))
+  const profileData = profile.exists() ? profile.data() : {}
+  const memberName = String(profileData.realName || profileData.name || member.realName || member.name).trim() || member.name
+  await setDoc(doc(service.db, 'attendance', id), { memberId: member.id, memberName, date, updatedAt: serverTimestamp() })
 }
 
 export async function checkInForMember(target, date) {
@@ -231,7 +234,7 @@ export async function checkInForMember(target, date) {
     if (!memory.records.some((item) => item.id === id)) memory.records.push({ id, memberId: target.id, memberName: target.name, date })
     return
   }
-  await setDoc(doc(service.db, 'attendance', id), { memberId: target.id, memberName: target.name, date, updatedAt: serverTimestamp() })
+  await setDoc(doc(service.db, 'attendance', id), { memberId: target.id, memberName: target.realName || target.name, date, updatedAt: serverTimestamp() })
 }
 
 export async function removeCheckIn(member, date) {
@@ -261,4 +264,15 @@ export async function changeMemberRoles(updates) {
   })
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(result.message || '권한 변경에 실패했어요.')
+}
+
+export async function changeMemberProfile(memberId, realName) {
+  const service = firebase()
+  if (!service || !service.auth.currentUser) throw new Error('로그인 상태를 다시 확인해 주세요.')
+  const token = await service.auth.currentUser.getIdToken()
+  const response = await fetch('/api/admin/member-profile', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ memberId, realName }),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.message || '본명 저장에 실패했어요.')
 }

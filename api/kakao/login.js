@@ -60,11 +60,12 @@ export default async function handler(request, response) {
     const snapshot = await ref.get()
     const nickname = String(profile.properties?.nickname || profile.kakao_account?.profile?.nickname || '카카오 멤버').trim().slice(0, 40) || '카카오 멤버'
     const storedRole = snapshot.exists ? snapshot.data().role : 'member'
+    const realName = snapshot.exists ? String(snapshot.data().realName || '').trim().slice(0, 40) : ''
     const role = bootstrapAdmins().has(kakaoId) ? 'admin' : ['admin', 'staff', 'member', 'paused', 'withdrawn'].includes(storedRole) ? storedRole : 'member'
     await ref.set({ name: nickname, role, provider: 'kakao', updatedAt: FieldValue.serverTimestamp(), lastLoginAt: FieldValue.serverTimestamp() }, { merge: true })
     const token = await auth.createCustomToken(memberId, { role })
     response.setHeader('Set-Cookie', [`${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/kakao/login; Max-Age=0`, `${ENTRY_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/kakao; Max-Age=0`])
-    return response.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').send(callbackHtml(token, { id: memberId, name: nickname, role }))
+    return response.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').send(callbackHtml(token, { id: memberId, name: nickname, realName, role }))
   } catch (reason) {
     console.error('kakao login failed', reason)
     return response.status(500).send('카카오 로그인 처리 중 문제가 발생했습니다. 다시 시도해 주세요.')

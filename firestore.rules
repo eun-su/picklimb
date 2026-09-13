@@ -6,10 +6,14 @@ service cloud.firestore {
     function administrator() { return signedIn() && memberRole() == 'admin'; }
     function operator() { return signedIn() && (memberRole() == 'admin' || memberRole() == 'staff'); }
     function activeMember() { return signedIn() && (memberRole() == 'admin' || memberRole() == 'staff' || memberRole() == 'member' || memberRole() == 'paused'); }
+    function memberDisplayName() {
+      let profile = get(/databases/$(database)/documents/members/$(request.auth.uid)).data;
+      return profile.keys().hasAny(['realName']) && profile.realName is string && profile.realName.size() > 0 ? profile.realName : profile.name;
+    }
     function ownsRecord() { return signedIn() && resource.data.memberId == request.auth.uid; }
     function validOwnCheckIn() {
       return request.resource.data.memberId == request.auth.uid
-        && request.resource.data.memberName == get(/databases/$(database)/documents/members/$(request.auth.uid)).data.name
+        && request.resource.data.memberName == memberDisplayName()
         && request.resource.data.date is string
         && request.resource.data.keys().hasOnly(['memberId', 'memberName', 'date', 'updatedAt']);
     }
