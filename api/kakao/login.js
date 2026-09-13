@@ -52,7 +52,7 @@ export default async function handler(request, response) {
     await ref.set({ name: nickname, role, provider: 'kakao', updatedAt: FieldValue.serverTimestamp(), lastLoginAt: FieldValue.serverTimestamp() }, { merge: true })
     const token = await auth.createCustomToken(memberId, { role })
     response.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/kakao/login; Max-Age=0`)
-    return response.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').send(callbackHtml(token, { id: memberId, name: nickname, role, connectionId: kakaoId }))
+    return response.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').send(callbackHtml(token, { id: memberId, name: nickname, role }))
   } catch (reason) {
     console.error('kakao login failed', reason)
     return response.status(500).send('카카오 로그인 처리 중 문제가 발생했습니다. 다시 시도해 주세요.')
