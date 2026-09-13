@@ -2,11 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function role() { return request.auth.token.role; }
-    function administrator() { return signedIn() && role() == 'admin'; }
-    function operator() { return signedIn() && (role() == 'admin' || role() == 'staff'); }
+    function memberRole() { return get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role; }
+    function administrator() { return signedIn() && memberRole() == 'admin'; }
+    function operator() { return signedIn() && (memberRole() == 'admin' || memberRole() == 'staff'); }
+    function activeMember() { return signedIn() && (memberRole() == 'admin' || memberRole() == 'staff' || memberRole() == 'member' || memberRole() == 'paused'); }
     function ownsRecord() { return signedIn() && resource.data.memberId == request.auth.uid; }
-    function validCheckIn() {
+    function validOwnCheckIn() {
       return request.resource.data.memberId == request.auth.uid
         && request.resource.data.memberName == get(/databases/$(database)/documents/members/$(request.auth.uid)).data.name
         && request.resource.data.date is string
@@ -19,15 +20,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 모든 멤버가 해당 날짜의 체크인 이름을 확인할 수 있지만, 본인 것만 바꿀 수 있습니다.
     match /attendance/{recordId} {
       allow read: if signedIn();
-      allow create: if signedIn() && validCheckIn();
-      allow update: if ownsRecord() && validCheckIn()
+      allow create: if administrator() || (activeMember() && validOwnCheckIn());
+      allow update: if administrator() || (activeMember() && ownsRecord() && validOwnCheckIn()
         && request.resource.data.memberId == resource.data.memberId
         && request.resource.data.memberName == resource.data.memberName
         && request.resource.data.date == resource.data.date);
-      allow delete: if ownsRecord();
+      allow delete: if administrator() || (activeMember() && ownsRecord());
     }
 
     match /notices/{noticeId} {

@@ -180,8 +180,13 @@ function firebase() {
 }
 export const canOperate = (member) => ['admin', 'staff'].includes(member.role)
 export const isAdmin = (member) => member.role === 'admin'
+export const canCheckIn = (member) => ['admin', 'staff', 'member', 'paused'].includes(member.role)
 
-export function beginKakaoLogin() { window.location.assign('/api/kakao/login') }
+export async function beginKakaoLogin(accessCode) {
+  const response = await fetch('/api/kakao/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessCode }) })
+  if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.message || '참여코드를 확인해 주세요.') }
+  window.location.assign('/api/kakao/login')
+}
 
 export async function completeKakaoLogin(token) {
   const service = firebase()
@@ -216,6 +221,16 @@ export async function checkIn(member, date) {
   await setDoc(doc(service.db, 'attendance', id), { memberId: member.id, memberName: member.name, date, updatedAt: serverTimestamp() })
 }
 
+export async function checkInForMember(target, date) {
+  const service = firebase(); const id = `${target.id}_${date}`
+  if (!service) {
+    if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
+    if (!memory.records.some((item) => item.id === id)) memory.records.push({ id, memberId: target.id, memberName: target.name, date })
+    return
+  }
+  await setDoc(doc(service.db, 'attendance', id), { memberId: target.id, memberName: target.name, date, updatedAt: serverTimestamp() })
+}
+
 export async function removeCheckIn(member, date) {
   const service = firebase(); const id = `${member.id}_${date}`
   if (!service) {
@@ -234,12 +249,12 @@ export async function saveNotice(notice) {
   await setDoc(doc(service.db, 'notices', 'guide'), { ...notice, updatedAt: serverTimestamp() })
 }
 
-export async function changeMemberRole(memberId, role) {
+export async function changeMemberRoles(updates) {
   const service = firebase()
   if (!service || !service.auth.currentUser) throw new Error('로그인 상태를 다시 확인해 주세요.')
   const token = await service.auth.currentUser.getIdToken()
   const response = await fetch('/api/admin/member-role', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ memberId, role }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ updates }),
   })
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(result.message || '권한 변경에 실패했어요.')
