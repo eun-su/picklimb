@@ -276,3 +276,17 @@ export async function changeMemberProfile(memberId, realName) {
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(result.message || '본명 저장에 실패했어요.')
 }
+
+async function memberRequest(path, options = {}) {
+  const service = firebase()
+  if (!service || !service.auth.currentUser) throw new Error('로그인 상태를 다시 확인해 주세요.')
+  const token = await service.auth.currentUser.getIdToken()
+  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) } })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.message || '회원정보를 처리하지 못했어요.')
+  return result
+}
+
+export const getMyProfile = () => memberRequest('/api/member/profile')
+export const saveMyProfile = (profile) => memberRequest('/api/member/profile', { method: 'POST', body: JSON.stringify(profile) })
+export const withdrawMembership = () => memberRequest('/api/member/withdraw', { method: 'POST' })
