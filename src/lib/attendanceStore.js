@@ -205,12 +205,11 @@ export async function getDashboard(member) {
   const attendance = member.role === 'withdrawn'
     ? query(collection(service.db, 'attendance'), where('memberId', '==', member.id))
     : collection(service.db, 'attendance')
-  const tasks = [getDocs(attendance), getDoc(doc(service.db, 'notices', 'guide'))]
-  if (canOperate(member)) tasks.push(getDocs(collection(service.db, 'members')))
-  const [recordsSnapshot, noticeSnapshot, membersSnapshot] = await Promise.all(tasks)
+  const tasks = [getDocs(attendance), getDoc(doc(service.db, 'notices', 'guide')), getMemberDirectory()]
+  const [recordsSnapshot, noticeSnapshot, directory] = await Promise.all(tasks)
   return {
     records: recordsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-    members: membersSnapshot ? membersSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })) : [],
+    members: directory.members || [],
     notice: noticeSnapshot.exists() ? noticeSnapshot.data() : DEFAULT_NOTICE,
   }
 }
@@ -287,6 +286,7 @@ async function memberRequest(path, options = {}) {
   return result
 }
 
+export const getMemberDirectory = () => memberRequest('/api/members')
 export const getMyProfile = () => memberRequest('/api/member/profile')
 export const saveMyProfile = (profile) => memberRequest('/api/member/profile', { method: 'POST', body: JSON.stringify(profile) })
 export const withdrawMembership = () => memberRequest('/api/member/withdraw', { method: 'POST' })

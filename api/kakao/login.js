@@ -62,7 +62,9 @@ export default async function handler(request, response) {
     const storedRole = snapshot.exists ? snapshot.data().role : 'member'
     const realName = snapshot.exists ? String(snapshot.data().realName || '').trim().slice(0, 40) : ''
     const role = bootstrapAdmins().has(kakaoId) ? 'admin' : ['admin', 'staff', 'member', 'paused', 'withdrawn'].includes(storedRole) ? storedRole : 'member'
-    await ref.set({ name: nickname, role, provider: 'kakao', updatedAt: FieldValue.serverTimestamp(), lastLoginAt: FieldValue.serverTimestamp() }, { merge: true })
+    const memberData = { name: nickname, role, provider: 'kakao', updatedAt: FieldValue.serverTimestamp(), lastLoginAt: FieldValue.serverTimestamp() }
+    if (!snapshot.exists) memberData.joinedAt = FieldValue.serverTimestamp()
+    await ref.set(memberData, { merge: true })
     const token = await auth.createCustomToken(memberId, { role })
     response.setHeader('Set-Cookie', [`${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/kakao/login; Max-Age=0`, `${ENTRY_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/kakao; Max-Age=0`])
     return response.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').send(callbackHtml(token, { id: memberId, name: nickname, realName, role }))
