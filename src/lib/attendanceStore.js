@@ -200,17 +200,19 @@ export async function getDashboard(member) {
   const service = firebase()
   if (!service) {
     if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
-    return structuredClone({ members: demoMembers, records: memory.records, notice: memory.notice })
+    return structuredClone({ members: demoMembers, records: memory.records, notice: memory.notice, previousSnapshot: null })
   }
   const attendance = member.role === 'withdrawn'
     ? query(collection(service.db, 'attendance'), where('memberId', '==', member.id))
     : collection(service.db, 'attendance')
   const tasks = [getDocs(attendance), getDoc(doc(service.db, 'notices', 'guide')), getMemberDirectory()]
-  const [recordsSnapshot, noticeSnapshot, directory] = await Promise.all(tasks)
+  if (canOperate(member)) tasks.push(getPreviousQuarterSnapshot())
+  const [recordsSnapshot, noticeSnapshot, directory, previousQuarter] = await Promise.all(tasks)
   return {
     records: recordsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
     members: directory.members || [],
     notice: noticeSnapshot.exists() ? noticeSnapshot.data() : DEFAULT_NOTICE,
+    previousSnapshot: previousQuarter?.snapshot || null,
   }
 }
 
@@ -287,6 +289,7 @@ async function memberRequest(path, options = {}) {
 }
 
 export const getMemberDirectory = () => memberRequest('/api/members')
+export const getPreviousQuarterSnapshot = () => memberRequest('/api/quarter-snapshot')
 export const getMyProfile = () => memberRequest('/api/member/profile')
 export const saveMyProfile = (profile) => memberRequest('/api/member/profile', { method: 'POST', body: JSON.stringify(profile) })
 export const withdrawMembership = () => memberRequest('/api/member/withdraw', { method: 'POST' })
