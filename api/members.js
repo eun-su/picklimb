@@ -29,9 +29,9 @@ export default async function handler(request, response) {
     const decoded = await auth.verifyIdToken(token)
     const requester = await db.collection('members').doc(decoded.uid).get()
     const requesterRole = requester.exists ? requester.data().role || 'member' : 'member'
-    if (!activeRoles.has(requesterRole)) return response.status(200).json({ members: [] })
-
     const snapshot = await db.collection('members').get()
+    const pendingCount = snapshot.docs.filter((item) => (item.data().role || 'member') === 'pending').length
+    if (!activeRoles.has(requesterRole)) return response.status(200).json({ members: [], pendingCount })
     const includeDetails = operatorRoles.has(requesterRole)
     const joinedAt = includeDetails ? await authCreatedAt(auth, snapshot.docs.map((item) => item.id)) : new Map()
     const members = snapshot.docs
@@ -45,9 +45,9 @@ export default async function handler(request, response) {
           ...(includeDetails ? { joinedAt: timestampToIso(data.joinedAt) || timestampToIso(data.createdAt) || joinedAt.get(item.id) || timestampToIso(data.lastLoginAt) } : {}),
         }
       })
-      .filter((item) => includeDetails || item.role !== 'withdrawn')
+      .filter((item) => includeDetails || !['withdrawn', 'pending'].includes(item.role))
 
-    return response.status(200).json({ members })
+    return response.status(200).json({ members, pendingCount })
   } catch (reason) {
     console.error('member directory failed', reason)
     return response.status(500).json({ message: '멤버 목록을 불러오지 못했어요.' })

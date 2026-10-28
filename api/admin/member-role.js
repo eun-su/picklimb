@@ -1,7 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore'
 import { adminServices } from '../_firebaseAdmin.js'
 
-const roles = new Set(['admin', 'staff', 'member', 'paused', 'withdrawn'])
+const roles = new Set(['admin', 'staff', 'member', 'paused', 'pending', 'withdrawn'])
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ message: 'POST 요청만 허용됩니다.' })
@@ -11,11 +11,14 @@ export default async function handler(request, response) {
   try {
     const { auth, db } = adminServices()
     const decoded = await auth.verifyIdToken(token)
-    if (decoded.role !== 'admin') return response.status(403).json({ message: '관리자만 권한을 변경할 수 있습니다.' })
+    const requester = await db.collection('members').doc(decoded.uid).get()
+    const requesterRole = requester.exists ? requester.data().role : ''
+    if (!['admin', 'staff'].includes(requesterRole)) return response.status(403).json({ message: '운영진과 관리자만 승인할 수 있습니다.' })
     const uniqueUpdates = [...new Map(updates.map((item) => [item.memberId, item])).values()]
     const refs = uniqueUpdates.map((item) => db.collection('members').doc(item.memberId))
     const snapshots = await db.getAll(...refs)
     if (snapshots.some((snapshot) => !snapshot.exists)) return response.status(404).json({ message: '카카오 로그인 이력이 없는 멤버가 포함되어 있습니다.' })
+    if (requesterRole === 'staff' && uniqueUpdates.some((item, index) => snapshots[index].data().role !== 'pending' || item.role !== 'member')) return response.status(403).json({ message: '운영진은 가입대기 인원을 정회원으로 승인할 수 있습니다.' })
     const batch = db.batch()
     uniqueUpdates.forEach((item) => batch.update(db.collection('members').doc(item.memberId), { role: item.role, updatedAt: FieldValue.serverTimestamp() }))
     await batch.commit()

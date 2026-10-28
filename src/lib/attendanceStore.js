@@ -200,7 +200,7 @@ export async function getDashboard(member) {
   const service = firebase()
   if (!service) {
     if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
-    return structuredClone({ members: demoMembers, records: memory.records, notice: memory.notice, previousSnapshot: null })
+    return structuredClone({ members: demoMembers, records: memory.records, notice: memory.notice, previousSnapshot: null, pendingCount: 0 })
   }
   const attendance = member.role === 'withdrawn'
     ? query(collection(service.db, 'attendance'), where('memberId', '==', member.id))
@@ -208,9 +208,12 @@ export async function getDashboard(member) {
   const tasks = [getDocs(attendance), getDoc(doc(service.db, 'notices', 'guide')), getMemberDirectory()]
   if (canOperate(member)) tasks.push(getPreviousQuarterSnapshot())
   const [recordsSnapshot, noticeSnapshot, directory, previousQuarter] = await Promise.all(tasks)
+  const members = directory.members || []
+  Object.defineProperty(members, 'pendingCount', { value: directory.pendingCount || 0, enumerable: false })
   return {
     records: recordsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-    members: directory.members || [],
+    members,
+    pendingCount: directory.pendingCount || 0,
     notice: noticeSnapshot.exists() ? noticeSnapshot.data() : DEFAULT_NOTICE,
     previousSnapshot: previousQuarter?.snapshot || null,
   }
@@ -228,14 +231,14 @@ export async function checkIn(member, date) {
   await setDoc(doc(service.db, 'attendance', id), { memberId: member.id, memberName, date, updatedAt: serverTimestamp() })
 }
 
-export async function checkInForMember(target, date) {
-  const service = firebase(); const id = `${target.id}_${date}`
+export async function checkInForMembers(targets, date) {
+  const service = firebase()
   if (!service) {
     if (!demoEnabled) throw new Error('서비스 설정이 완료되지 않았어요.')
-    if (!memory.records.some((item) => item.id === id)) memory.records.push({ id, memberId: target.id, memberName: target.name, date })
+    targets.forEach((target) => { const id = `${target.id}_${date}`; if (!memory.records.some((item) => item.id === id)) memory.records.push({ id, memberId: target.id, memberName: target.realName || target.name, date }) })
     return
   }
-  await setDoc(doc(service.db, 'attendance', id), { memberId: target.id, memberName: target.realName || target.name, date, updatedAt: serverTimestamp() })
+  await memberRequest('/api/operator/check-in', { method: 'POST', body: JSON.stringify({ date, memberIds: targets.map((item) => item.id) }) })
 }
 
 export async function removeCheckIn(member, date) {

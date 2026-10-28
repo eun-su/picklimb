@@ -59,9 +59,9 @@ export default async function handler(request, response) {
     const ref = db.collection('members').doc(memberId)
     const snapshot = await ref.get()
     const nickname = String(profile.properties?.nickname || profile.kakao_account?.profile?.nickname || '카카오 멤버').trim().slice(0, 40) || '카카오 멤버'
-    const storedRole = snapshot.exists ? snapshot.data().role : 'member'
+    const storedRole = snapshot.exists ? snapshot.data().role : 'pending'
     const realName = snapshot.exists ? String(snapshot.data().realName || '').trim().slice(0, 40) : ''
-    const role = bootstrapAdmins().has(kakaoId) ? 'admin' : ['admin', 'staff', 'member', 'paused', 'withdrawn'].includes(storedRole) ? storedRole : 'member'
+    const role = bootstrapAdmins().has(kakaoId) ? 'admin' : ['admin', 'staff', 'member', 'paused', 'pending', 'withdrawn'].includes(storedRole) ? storedRole : 'pending'
     const memberData = { name: nickname, role, provider: 'kakao', updatedAt: FieldValue.serverTimestamp(), lastLoginAt: FieldValue.serverTimestamp() }
     if (!snapshot.exists) memberData.joinedAt = FieldValue.serverTimestamp()
     await ref.set(memberData, { merge: true })

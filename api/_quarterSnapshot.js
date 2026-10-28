@@ -1,5 +1,5 @@
 const KST_OFFSET = 9 * 60 * 60 * 1000
-const roleOrder = { admin: 0, staff: 1, member: 2, paused: 3, withdrawn: 4 }
+const roleOrder = { admin: 0, staff: 1, member: 2, paused: 3, pending: 4, withdrawn: 5 }
 
 export const operatorRoles = new Set(['admin', 'staff'])
 
@@ -46,10 +46,11 @@ export async function getOrCreateQuarterSnapshot(db, quarter) {
     return { id: member.id, name: String(data.name || '카카오 멤버'), realName: String(data.realName || ''), role: data.role || 'member', dates, count: dates.length, lastDate: dates[0] || '' }
   }).sort((left, right) => (roleOrder[left.role] ?? 99) - (roleOrder[right.role] ?? 99) || left.realName.localeCompare(right.realName, 'ko') || left.name.localeCompare(right.name, 'ko'))
   const stats = {
-    total: members.length,
+    total: members.filter((item) => item.role !== 'pending').length,
     active: members.filter((item) => ['admin', 'staff', 'member'].includes(item.role)).length,
     absent: members.filter((item) => item.role === 'member' && item.count === 0).length,
     paused: members.filter((item) => item.role === 'paused').length,
+    pending: members.filter((item) => item.role === 'pending').length,
     withdrawn: members.filter((item) => item.role === 'withdrawn').length,
   }
   const snapshot = { quarter, stats, members, capturedAt: new Date().toISOString() }
